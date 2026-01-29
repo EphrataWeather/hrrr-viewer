@@ -1,64 +1,91 @@
 import os
 import json
-from herbie import Herbie
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 import pandas as pd
+from herbie import Herbie
 
-# 1. Setup environment
+# 1. Setup
 os.environ['HERBIE_SAVE_DIR'] = '/tmp/herbie_data'
 os.makedirs("web", exist_ok=True)
 
-# 2. Timing Logic (Search for latest available run)
-now = pd.Timestamp("now", tz="UTC").floor("1h").replace(tzinfo=None)
-print(f"Attempting to fetch HRRR data for: {now}")
+# 2. Find the latest model run (Start 1 hour ago to ensure data availability)
+now = pd.Timestamp("now", tz="UTC").floor("1h") - pd.Timedelta(hours=1)
+now = now.replace(tzinfo=None)
 
-try:
-    H = Herbie(date=now, model='hrrr', product='subh', fxx=0) 
-    ds = H.xarray(":(?:CSNOW|CICEP|CFRZR|CRAIN):surface:")
-except Exception:
-    print("Current hour not found, trying previous hour...")
-    now = now - pd.Timedelta(hours=1)
-    H = Herbie(date=now, model='hrrr', product='subh', fxx=0)
-    ds = H.xarray(":(?:CSNOW|CICEP|CFRZR|CRAIN):surface:")
+print(f"Fetching HRRR Forecast initialized at: {now}")
 
-# 3. Process Precip Type
-ptype_raw = ds.crain * 1 + ds.cfrzr * 2 + ds.cicep * 3 + ds.csnow * 4
+# 3. Define the Projections
+# HRRR Native (Approximate Lambert parameters for HRRR)
+hrrr_crs = ccrs.LambertConformal(central_longitude=-97.5, central_latitude=38.5, standard_parallels=(38.5, 38.5))
+# Web Map Standard (Lat/Lon) - The target for Leaflet
+web_crs = ccrs.PlateCarree()
 
-# --- FIX: RESHAPE DATA TO 2D GRID ---
-# HRRR subh is typically (1, 1059, 1799) for (time, y, x)
-# We remove the time dimension and ensure it's 2D
-if len(ptype_raw.shape) == 3:
-    ptype_2d = ptype_raw.values[0] # Take first time step
-else:
-    # If it came in flat (e.g., shape 1905141), reshape to standard HRRR grid
-    # HRRR CONUS grid is 1059 rows by 1799 columns
+# 4. Loop through 18 forecast hours
+forecast_metadata = []
+
+for fxx in range(0, 19): # 0 to 18
+    print(f"Processing Forecast Hour: {fxx:02d}")
+    
     try:
-        ptype_2d = ptype_raw.values.reshape(1059, 1799)
-    except ValueError:
-        # Fallback if dimensions differ (e.g., Alaska or different product)
-        ptype_2d = ptype_raw.values 
+        H = Herbie(date=now, model='hrrr', product='subh', fxx=fxx)
+        # Download variables
+        ds = H.xarray(":(?:CSNOW|CICEP|CFRZR|CRAIN):surface:")
+        
+        # Calculate Precip Type
+        ptype = ds.crain * 1 + ds.cfrzr * 2 + ds.cicep * 3 + ds.csnow * 4
+        
+        # --- REPROJECTION LOGIC ---
+        # We set up a matplotlib figure that is inherently Lat/Lon (PlateCarree)
+        # This forces matplotlib to warp the Lambert data to fit a square grid
+        
+        fig = plt.figure(figsize=(10, 8), frameon=False)
+        # This 'projection=web_crs' implies the AXIS is Lat/Lon
+        ax = plt.axes(projection=web_crs) 
+        
+        # We want to zoom into CONUS (Continental US) to avoid huge empty files
+        # (West, East, South, North)
+        extent = [-125, -66, 24, 50] 
+        ax.set_extent(extent, crs=web_crs)
+        ax.axis('off')
+        
+        # Custom Colormap
+        colors = [(0,0,0,0), (0,0.8,0,0.6), (1,0,0,0.6), (1,0.5,0,0.6), (0,0,1,0.6)]
+        cmap = plt.matplotlib.colors.ListedColormap(colors)
+        
+        # Plot! transform=hrrr_crs tells mpl the DATA is in Lambert
+        # The axis is in PlateCarree, so it reprojects on the fly.
+        ax.pcolormesh(ds.longitude, ds.latitude, ptype.values[0], 
+                      transform=web_crs, # Using web_crs because ds.lat/lon are actual lat/lon values
+                      cmap=cmap, 
+                      shading='nearest')
+        
+        # Save frame
+        filename = f"overlay_{fxx:02d}.png"
+        plt.savefig(f"web/{filename}", transparent=True, bbox_inches='tight', pad_inches=0, dpi=150)
+        plt.close(fig)
+        
+        # Add to metadata list
+        forecast_metadata.append({
+            "hour": fxx,
+            "file": filename,
+            "valid_time": (now + pd.Timedelta(hours=fxx)).strftime("%Y-%m-%d %H:%M UTC")
+        })
 
-# 4. Generate the Image
-colors = [(0,0,0,0), (0,0.8,0,0.6), (1,0,0,0.6), (1,0.5,0,0.6), (0,0,1,0.6)]
-cmap = plt.matplotlib.colors.ListedColormap(colors)
+    except Exception as e:
+        print(f"Failed on hour {fxx}: {e}")
+        continue
 
-fig = plt.figure(frameon=False, figsize=(15, 10)) # Adjusted size for better resolution
-ax = plt.Axes(fig, [0., 0., 1., 1.])
-ax.set_axis_off()
-fig.add_axes(ax)
+# 5. Save the Master JSON
+# Note: The bounds must match the 'extent' we set above!
+# Leaflet format: [[South, West], [North, East]]
+master_data = {
+    "run_time": now.strftime("%Y-%m-%d %H:%M UTC"),
+    "bounds": [[24, -125], [50, -66]], 
+    "forecasts": forecast_metadata
+}
 
-# Plotting the 2D array
-ax.imshow(ptype_2d, cmap=cmap, aspect='auto', interpolation='nearest')
-plt.savefig("web/overlay.png", transparent=True, dpi=300)
-
-# 5. Metadata for Leaflet
-bounds = [
-    [float(ds.latitude.min()), float(ds.longitude.min())],
-    [float(ds.latitude.max()), float(ds.longitude.max())]
-]
-
-with open("web/metadata.json", "w") as f:
-    json.dump({"bounds": bounds, "updated": now.strftime("%Y-%m-%d %H:%M UTC")}, f)
-
-print(f"Map updated successfully for {now}")
+with open("web/data.json", "w") as f:
+    json.dump(master_data, f)
