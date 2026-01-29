@@ -1,0 +1,46 @@
+name: Update HRRR Sub-Hourly Map
+
+on:
+  schedule:
+    # Runs every 15 minutes (HRRR sub-hourly frequency)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allows you to run it manually for testing
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python Packages
+        run: |
+          pip install xarray cfgrib pandas matplotlib numpy Pillow eccodes
+
+      - name: Run HRRR Processor
+        run: python process_hrrr.py
+        env:
+          # Optional: If you need API keys for specific data sources
+          PYTHONUNBUFFERED: 1
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web
+          force_orphan: true # Keeps the repo size small by overwriting history
