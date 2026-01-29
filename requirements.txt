@@ -1,0 +1,8 @@
+xarray
+cfgrib
+pandas
+matplotlib
+numpy
+Pillow
+eccodes
+herbie
