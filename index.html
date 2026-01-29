@@ -1,0 +1,12 @@
+<div id="map" style="height: 600px;"></div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map').setView([39.8, -98.5], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // Load the bounds and then the image
+    fetch('bounds.json').then(r => r.json()).then(bounds => {
+        L.imageOverlay('overlay.png', bounds, { opacity: 0.8 }).addTo(map);
+        map.fitBounds(bounds);
+    });
+</script>
