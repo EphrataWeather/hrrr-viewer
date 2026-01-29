@@ -4,9 +4,12 @@
     var map = L.map('map').setView([39.8, -98.5], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    // Load the bounds and then the image
-    fetch('bounds.json').then(r => r.json()).then(bounds => {
-        L.imageOverlay('overlay.png', bounds, { opacity: 0.8 }).addTo(map);
-        map.fitBounds(bounds);
+fetch('metadata.json')
+    .then(r => r.json())
+    .then(data => {
+        L.imageOverlay('overlay.png', data.bounds, { opacity: 0.8 }).addTo(map);
+        map.fitBounds(data.bounds);
+        // Optional: display the update time on your map
+        console.log("Data valid for: " + data.updated);
     });
 </script>
