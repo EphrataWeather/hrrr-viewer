@@ -1,83 +1,65 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>HRRR Precip Type Viewer</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <title>HRRR 18-Hour Forecast</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; }
-        #map { height: 100vh; width: 100%; background: #222; }
-        #controls {
-            position: absolute; bottom: 20px; left: 20px; right: 20px;
-            background: rgba(255, 255, 255, 0.9); padding: 15px;
-            z-index: 1000; border-radius: 8px; text-align: center;
+        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        #ui {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 80%; max-width: 600px; background: rgba(0,0,0,0.8);
+            padding: 20px; border-radius: 10px; z-index: 1000; text-align: center;
         }
-        input[type=range] { width: 100%; }
-        .legend { margin-top: 10px; font-size: 14px; }
-        .dot { height: 10px; width: 10px; display: inline-block; border-radius: 50%; margin-right: 5px; }
+        input[type=range] { width: 100%; margin: 10px 0; }
+        .legend { display: flex; justify-content: center; gap: 15px; font-size: 12px; }
+        .key { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 5px; }
     </style>
 </head>
 <body>
-
     <div id="map"></div>
-
-    <div id="controls">
-        <h3 id="time-label">Loading Forecast...</h3>
-        <input type="range" id="time-slider" min="0" max="0" value="0" step="1">
+    <div id="ui">
+        <div id="time-display">Loading Forecast Data...</div>
+        <input type="range" id="slider" min="0" value="0" step="1">
         <div class="legend">
-            <span class="dot" style="background:green;"></span>Rain
-            <span class="dot" style="background:red;"></span>Frz Rain
-            <span class="dot" style="background:orange;"></span>Sleet
-            <span class="dot" style="background:blue;"></span>Snow
+            <div><span class="key" style="background: green"></span>Rain</div>
+            <div><span class="key" style="background: red"></span>Frz Rain</div>
+            <div><span class="key" style="background: orange"></span>Sleet</div>
+            <div><span class="key" style="background: blue"></span>Snow</div>
         </div>
     </div>
 
     <script>
-        // 1. Initialize Map with the Correct Tile Layer
-        var map = L.map('map').setView([39.8, -98.5], 4);
-        
-        // This standard URL prevents the "random tile" glitch
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+        const map = L.map('map').setView([38.5, -97.5], 4);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        var currentOverlay = null;
-        var forecastData = [];
+        let overlays = [];
+        let currentLayer = null;
 
-        // 2. Fetch Data
-        fetch('data.json')
-            .then(res => res.json())
+        fetch('manifest.json')
+            .then(r => r.json())
             .then(data => {
-                forecastData = data.forecasts;
+                const slider = document.getElementById('slider');
+                slider.max = data.forecasts.length - 1;
                 
-                // Configure Slider
-                var slider = document.getElementById('time-slider');
-                slider.max = forecastData.length - 1;
-                slider.value = 0;
-                
-                // Update function
-                slider.oninput = function() {
-                    updateMap(this.value, data.bounds);
-                };
+                // Pre-load layer metadata
+                data.forecasts.forEach((f, i) => {
+                    const layer = L.imageOverlay(f.file, data.bounds, { opacity: 0.7 });
+                    overlays.push({ layer, time: f.valid_time, hour: f.hour });
+                });
 
-                // Initial Load
-                updateMap(0, data.bounds);
+                function update(idx) {
+                    if (currentLayer) map.removeLayer(currentLayer);
+                    currentLayer = overlays[idx].layer;
+                    currentLayer.addTo(map);
+                    document.getElementById('time-display').innerText = 
+                        `Valid: ${overlays[idx].time} (Hour ${overlays[idx].hour})`;
+                }
+
+                slider.oninput = (e) => update(e.target.value);
+                update(0);
             });
-
-        function updateMap(index, bounds) {
-            var step = forecastData[index];
-            document.getElementById('time-label').innerText = 
-                "Forecast Hour: " + step.hour + " | Valid: " + step.valid_time;
-
-            if (currentOverlay) {
-                map.removeLayer(currentOverlay);
-            }
-
-            currentOverlay = L.imageOverlay(step.file, bounds, {opacity: 0.8}).addTo(map);
-        }
     </script>
 </body>
 </html>
