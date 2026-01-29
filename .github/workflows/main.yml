@@ -1,8 +1,8 @@
-name: Update HRRR Sub-Hourly Map
+name: Update HRRR Forecast (18h)
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *' # Run once every hour (at the top of the hour)
   workflow_dispatch:
 
 permissions:
@@ -13,13 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Install System Dependencies (Required for Cartopy/Projections)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libeccodes-dev
+          sudo apt-get install -y libgeos-dev libproj-dev proj-bin libeccodes-dev
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -29,8 +28,8 @@ jobs:
       - name: Install Python Packages
         run: |
           python -m pip install --upgrade pip
-          # Note: 'herbie-data' is the PyPI package name for herbie
-          python -m pip install xarray cfgrib pandas matplotlib numpy Pillow eccodes herbie-data
+          # We need cartopy and scipy for the map reprojection
+          python -m pip install xarray cfgrib pandas matplotlib numpy Pillow eccodes herbie-data cartopy scipy
 
       - name: Run HRRR Processor
         run: python process_hrrr.py
