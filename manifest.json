@@ -1,0 +1,1 @@
+{"run_time": "2026-11-28 17:00 UTC", "bounds": [[24, -125], [50, -66]], "forecasts": [{"hour": 1, "file": "data/overlay_01.png", "valid_time": "2026-11-28 18:00 UTC"}, {"hour": 2, "file": "data/overlay_02.png", "valid_time": "2026-11-28 19:00 UTC"}]}
